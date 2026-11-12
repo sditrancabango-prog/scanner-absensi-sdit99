@@ -1,0 +1,102 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scanner Absensi SDIT Persis 99</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f1f5f3;
+      margin: 0;
+      padding: 24px 16px;
+      text-align: center;
+    }
+    .panel {
+      max-width: 480px;
+      margin: 30px auto;
+      padding: 24px;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 18px #0001;
+    }
+    button {
+      padding: 14px 22px;
+      border: 0;
+      border-radius: 9px;
+      background: #176044;
+      color: white;
+      font-size: 16px;
+      margin: 8px;
+    }
+    video {
+      width: 100%;
+      max-width: 400px;
+      margin-top: 16px;
+      border-radius: 12px;
+      background: #222;
+    }
+    #pesan { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Scanner Absensi</h2>
+    <p>SDIT Persis 99 Rancabango</p>
+    <p>Uji akses kamera HP Android</p>
+
+    <button onclick="bukaKamera()">AKTIFKAN KAMERA</button>
+    <button onclick="tutupKamera()">TUTUP KAMERA</button>
+
+    <div>
+      <video id="kamera" autoplay playsinline muted></video>
+    </div>
+    <p id="pesan">Kamera belum diaktifkan.</p>
+  </div>
+
+  <script>
+    let streamKamera = null;
+
+    async function bukaKamera() {
+      const pesan = document.getElementById("pesan");
+      const video = document.getElementById("kamera");
+
+      try {
+        if (!navigator.mediaDevices ||
+            !navigator.mediaDevices.getUserMedia) {
+          throw new Error(
+            "Browser tidak mendukung akses kamera atau halaman belum HTTPS."
+          );
+        }
+
+        streamKamera =
+          await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: "environment" }
+            },
+            audio: false
+          });
+
+        video.srcObject = streamKamera;
+        await video.play();
+        pesan.textContent = "Kamera berhasil dibuka!";
+      } catch (error) {
+        pesan.textContent =
+          "Gagal membuka kamera: " + error.name + " - " + error.message;
+      }
+    }
+
+    function tutupKamera() {
+      if (streamKamera) {
+        streamKamera.getTracks().forEach(track => track.stop());
+        streamKamera = null;
+      }
+
+      document.getElementById("kamera").srcObject = null;
+      document.getElementById("pesan").textContent =
+        "Kamera sudah ditutup.";
+    }
+  </script>
+</body>
+</html>
