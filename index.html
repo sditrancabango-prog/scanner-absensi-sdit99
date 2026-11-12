@@ -5,97 +5,168 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Scanner Absensi SDIT Persis 99</title>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
   <style>
     body {
       font-family: Arial, sans-serif;
       background: #f1f5f3;
       margin: 0;
-      padding: 24px 16px;
+      padding: 20px 14px;
       text-align: center;
     }
     .panel {
       max-width: 480px;
-      margin: 30px auto;
-      padding: 24px;
+      margin: 20px auto;
+      padding: 22px;
       background: white;
       border-radius: 16px;
       box-shadow: 0 4px 18px #0001;
     }
     button {
-      padding: 14px 22px;
+      padding: 14px 20px;
       border: 0;
       border-radius: 9px;
       background: #176044;
       color: white;
       font-size: 16px;
-      margin: 8px;
+      margin: 8px 4px;
+      cursor: pointer;
     }
-    video {
+    button:disabled {
+      opacity: .5;
+    }
+    #reader {
       width: 100%;
-      max-width: 400px;
-      margin-top: 16px;
-      border-radius: 12px;
-      background: #222;
+      margin: 18px auto;
     }
-    #pesan { margin-top: 16px; }
+    #hasil {
+      padding: 15px;
+      border-radius: 10px;
+      background: #eef5f0;
+      margin-top: 15px;
+      overflow-wrap: anywhere;
+    }
+    .nisn {
+      font-size: 25px;
+      font-weight: bold;
+      color: #176044;
+      margin: 10px;
+    }
   </style>
 </head>
+
 <body>
   <div class="panel">
-    <h2>Scanner Absensi</h2>
+    <h2>SCANNER ABSENSI</h2>
     <p>SDIT Persis 99 Rancabango</p>
-    <p>Uji akses kamera HP Android</p>
+    <p>Arahkan kamera ke barcode NISN siswa.</p>
 
-    <button onclick="bukaKamera()">AKTIFKAN KAMERA</button>
-    <button onclick="tutupKamera()">TUTUP KAMERA</button>
+    <button id="btnMulai" onclick="mulaiScan()">
+      MULAI SCAN BARCODE
+    </button>
 
-    <div>
-      <video id="kamera" autoplay playsinline muted></video>
+    <button id="btnStop" onclick="stopScan()" disabled>
+      HENTIKAN
+    </button>
+
+    <div id="reader"></div>
+
+    <div id="hasil">
+      Menunggu pemindaian barcode...
     </div>
-    <p id="pesan">Kamera belum diaktifkan.</p>
   </div>
 
   <script>
-    let streamKamera = null;
+    let scanner = null;
+    let sedangScan = false;
+    let sudahTerbaca = false;
 
-    async function bukaKamera() {
-      const pesan = document.getElementById("pesan");
-      const video = document.getElementById("kamera");
+    async function mulaiScan() {
+      const hasil = document.getElementById("hasil");
+
+      if (typeof Html5Qrcode === "undefined") {
+        hasil.textContent =
+          "Library scanner tidak berhasil dimuat. Periksa koneksi internet.";
+        return;
+      }
 
       try {
-        if (!navigator.mediaDevices ||
-            !navigator.mediaDevices.getUserMedia) {
-          throw new Error(
-            "Browser tidak mendukung akses kamera atau halaman belum HTTPS."
-          );
+        hasil.textContent = "Mengakses kamera...";
+
+        const cameras = await Html5Qrcode.getCameras();
+
+        if (!cameras || cameras.length === 0) {
+          throw new Error("Kamera tidak ditemukan.");
         }
 
-        streamKamera =
-          await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { ideal: "environment" }
-            },
-            audio: false
-          });
+        const kameraBelakang =
+          cameras.find(c =>
+            /back|rear|environment|belakang/i.test(c.label)
+          ) || cameras[cameras.length - 1];
 
-        video.srcObject = streamKamera;
-        await video.play();
-        pesan.textContent = "Kamera berhasil dibuka!";
+        scanner = new Html5Qrcode("reader");
+
+        sudahTerbaca = false;
+
+        await scanner.start(
+          kameraBelakang.id,
+          {
+            fps: 10,
+            qrbox: { width: 280, height: 150 },
+            formatsToSupport: [
+              Html5QrcodeSupportedFormats.CODE_128,
+              Html5QrcodeSupportedFormats.CODE_39,
+              Html5QrcodeSupportedFormats.EAN_13,
+              Html5QrcodeSupportedFormats.EAN_8,
+              Html5QrcodeSupportedFormats.UPC_A,
+              Html5QrcodeSupportedFormats.QR_CODE
+            ]
+          },
+          hasilScan,
+          function () {}
+        );
+
+        sedangScan = true;
+        document.getElementById("btnMulai").disabled = true;
+        document.getElementById("btnStop").disabled = false;
+        hasil.textContent = "Kamera aktif. Arahkan ke barcode siswa.";
+
       } catch (error) {
-        pesan.textContent =
-          "Gagal membuka kamera: " + error.name + " - " + error.message;
+        hasil.textContent =
+          "Gagal membuka scanner: " + error.message;
       }
     }
 
-    function tutupKamera() {
-      if (streamKamera) {
-        streamKamera.getTracks().forEach(track => track.stop());
-        streamKamera = null;
+    async function hasilScan(teks) {
+      if (sudahTerbaca) return;
+
+      sudahTerbaca = true;
+
+      const nisn = String(teks).trim();
+
+      document.getElementById("hasil").innerHTML =
+        "<div>BARCODE BERHASIL DIBACA</div>" +
+        "<div class='nisn'>" + nisn + "</div>" +
+        "<div>Pastikan angka NISN sesuai data siswa.</div>";
+
+      await stopScan();
+    }
+
+    async function stopScan() {
+      if (scanner && sedangScan) {
+        try {
+          await scanner.stop();
+          await scanner.clear();
+        } catch (error) {
+          console.log(error);
+        }
       }
 
-      document.getElementById("kamera").srcObject = null;
-      document.getElementById("pesan").textContent =
-        "Kamera sudah ditutup.";
+      sedangScan = false;
+      document.getElementById("btnMulai").disabled = false;
+      document.getElementById("btnStop").disabled = true;
     }
   </script>
 </body>
