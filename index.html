@@ -5,9 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Scanner Absensi SDIT Persis 99</title>
-
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -32,10 +30,6 @@
       color: white;
       font-size: 16px;
       margin: 8px 4px;
-      cursor: pointer;
-    }
-    button:disabled {
-      opacity: .5;
     }
     #reader {
       width: 100%;
@@ -49,55 +43,65 @@
       overflow-wrap: anywhere;
     }
     .nisn {
-      font-size: 25px;
+      font-size: 24px;
       font-weight: bold;
       color: #176044;
       margin: 10px;
     }
   </style>
 </head>
-
 <body>
   <div class="panel">
     <h2>SCANNER ABSENSI</h2>
     <p>SDIT Persis 99 Rancabango</p>
-    <p>Arahkan kamera ke barcode NISN siswa.</p>
+    <p id="infoKelas">Memeriksa tiket scanner...</p>
 
-    <button id="btnMulai" onclick="mulaiScan()">
+    <button id="btnMulai" onclick="mulaiScan()" disabled>
       MULAI SCAN BARCODE
     </button>
 
-    <button id="btnStop" onclick="stopScan()" disabled>
-      HENTIKAN
-    </button>
+    <button onclick="stopScan()">HENTIKAN</button>
 
     <div id="reader"></div>
-
-    <div id="hasil">
-      Menunggu pemindaian barcode...
-    </div>
+    <div id="hasil">Memeriksa akses...</div>
   </div>
 
   <script>
+    // URL WEB APP GOOGLE APPS SCRIPT
+    const API_URL =
+      "https://script.google.com/macros/s/AKfycbyYTWOGKfz9uGWZYPrp2hV1KW2opeWxmEsjSsK-7X6Z3eOibd3-vHjvVi9PlCBhnkr8bw/exec";
+
+    const ticket =
+      new URLSearchParams(window.location.search).get("ticket");
+
     let scanner = null;
     let sedangScan = false;
     let sudahTerbaca = false;
+    let sedangMengirim = false;
+
+    const hasil = document.getElementById("hasil");
+    const tombolMulai = document.getElementById("btnMulai");
+
+    if (!ticket) {
+      hasil.textContent =
+        "Akses ditolak. Silakan buka scanner dari dashboard absensi.";
+    } else {
+      document.getElementById("infoKelas").textContent =
+        "Tiket tersedia. Silakan mulai scan.";
+
+      hasil.textContent = "Scanner siap digunakan.";
+      tombolMulai.disabled = false;
+    }
 
     async function mulaiScan() {
-      const hasil = document.getElementById("hasil");
-
-      if (typeof Html5Qrcode === "undefined") {
-        hasil.textContent =
-          "Library scanner tidak berhasil dimuat. Periksa koneksi internet.";
-        return;
-      }
+      if (!ticket || sedangScan) return;
 
       try {
         hasil.textContent = "Mengakses kamera...";
 
         const cameras = await Html5Qrcode.getCameras();
 
-        if (!cameras || cameras.length === 0) {
+        if (!cameras.length) {
           throw new Error("Kamera tidak ditemukan.");
         }
 
@@ -107,7 +111,6 @@
           ) || cameras[cameras.length - 1];
 
         scanner = new Html5Qrcode("reader");
-
         sudahTerbaca = false;
 
         await scanner.start(
@@ -129,29 +132,78 @@
         );
 
         sedangScan = true;
-        document.getElementById("btnMulai").disabled = true;
-        document.getElementById("btnStop").disabled = false;
-        hasil.textContent = "Kamera aktif. Arahkan ke barcode siswa.";
+        tombolMulai.disabled = true;
+        hasil.textContent = "Kamera aktif. Arahkan ke barcode NISN.";
 
       } catch (error) {
         hasil.textContent =
-          "Gagal membuka scanner: " + error.message;
+          "Gagal membuka kamera: " + error.message;
       }
     }
 
     async function hasilScan(teks) {
-      if (sudahTerbaca) return;
+      if (sudahTerbaca || sedangMengirim) return;
 
       sudahTerbaca = true;
+      sedangMengirim = true;
 
       const nisn = String(teks).trim();
 
-      document.getElementById("hasil").innerHTML =
-        "<div>BARCODE BERHASIL DIBACA</div>" +
-        "<div class='nisn'>" + nisn + "</div>" +
-        "<div>Pastikan angka NISN sesuai data siswa.</div>";
-
       await stopScan();
+
+      hasil.innerHTML =
+        "<strong>Barcode terbaca</strong>" +
+        "<div class='nisn'></div>" +
+        "<div>Mengirim absensi ke server...</div>";
+
+      hasil.querySelector(".nisn").textContent = nisn;
+
+      kirimAbsensi(nisn);
+    }
+
+    function kirimAbsensi(nisn) {
+      const callbackName = "absensiCallback";
+
+      window[callbackName] = function(data) {
+        delete window[callbackName];
+
+        if (data && data.success) {
+          hasil.innerHTML =
+            "<strong>ABSENSI BERHASIL</strong>" +
+            "<div class='nisn'></div>" +
+            "<div></div>";
+
+          hasil.querySelector(".nisn").textContent = nisn;
+          hasil.querySelectorAll("div")[1].textContent =
+            data.message || "Data absensi berhasil disimpan.";
+
+        } else {
+          hasil.innerHTML =
+            "<strong>ABSENSI GAGAL</strong><div></div>";
+
+          hasil.querySelector("div").textContent =
+            data && data.message
+              ? data.message
+              : "Terjadi kesalahan saat menyimpan absensi.";
+        }
+      };
+
+      const script = document.createElement("script");
+
+      script.src =
+        API_URL +
+        "?action=scan" +
+        "&ticket=" + encodeURIComponent(ticket) +
+        "&nisn=" + encodeURIComponent(nisn) +
+        "&callback=" + callbackName;
+
+      script.onerror = function() {
+        delete window[callbackName];
+        hasil.textContent =
+          "Tidak dapat menghubungi server Apps Script.";
+      };
+
+      document.body.appendChild(script);
     }
 
     async function stopScan() {
@@ -165,8 +217,7 @@
       }
 
       sedangScan = false;
-      document.getElementById("btnMulai").disabled = false;
-      document.getElementById("btnStop").disabled = true;
+      tombolMulai.disabled = !ticket || sedangMengirim;
     }
   </script>
 </body>
